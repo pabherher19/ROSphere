@@ -1,4 +1,1 @@
-venv\Scripts\activate
-pip install -U streamlit plotly pandas numpy scipy
-python -m streamlit cache clear --all
-python -m streamlit run app.py
+c

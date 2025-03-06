@@ -3,6 +3,10 @@ import plotly.graph_objects as go
 import numpy as np
 import pandas as pd
 import time
+import os
+import tempfile
+import threading
+import datetime
 from datetime import datetime, timedelta
 
 # Function to convert hex colors to RGB
@@ -26,6 +30,22 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Create temp directory to store uploaded files
+temp_dir = tempfile.mkdtemp()
+
+# Function to delete file after 10 minutes
+def delete_file_after_delay(file_path, delay_seconds=600):
+    def delete_task():
+        time.sleep(delay_seconds)
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except Exception as e:
+            pass  # Silently fail if file can't be deleted
+    
+    # Start thread to delete file after delay
+    threading.Thread(target=delete_task, daemon=True).start()
 
 # Custom CSS styling
 st.markdown("""
@@ -159,6 +179,83 @@ st.markdown("""
     .stSelectbox div[data-baseweb="select"] div {
         color: #00264f !important;
         font-weight: bold !important;
+    }
+    
+    /* Clickable card styling */
+    .clickable-card {
+        background-color: #0a1e3d;
+        border-radius: 5px;
+        padding: 15px;
+        margin-bottom: 10px;
+        text-align: center;
+        cursor: pointer;
+        transition: background-color 0.3s;
+    }
+    
+    .clickable-card:hover {
+        background-color: #1a2f4d;
+    }
+    
+    .card-title {
+        font-weight: bold;
+        font-size: 18px;
+        margin-bottom: 5px;
+    }
+    
+    .card-subtitle {
+        font-size: 14px;
+        color: #cccccc;
+    }
+    
+    /* Modal dialog styling */
+    .modal-dialog {
+        border: 1px solid #1a2f4d;
+        border-radius: 8px;
+        background-color: #0a1e30;
+        padding: 15px;
+        margin-top: 10px;
+        margin-bottom: 20px;
+    }
+    
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+        border-bottom: 1px solid #1a2f4d;
+        padding-bottom: 10px;
+    }
+    
+    .modal-title {
+        font-size: 18px;
+        font-weight: bold;
+    }
+    
+    .modal-close {
+        cursor: pointer;
+        font-size: 20px;
+    }
+    
+    .modal-body {
+        margin-bottom: 10px;
+    }
+    
+    .stat-box {
+        background-color: #0a1e3d;
+        border-radius: 5px;
+        padding: 10px;
+        margin-bottom: 8px;
+        display: flex;
+        justify-content: space-between;
+    }
+    
+    .stat-label {
+        font-size: 14px;
+    }
+    
+    .stat-value {
+        font-weight: bold;
+        font-size: 16px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -351,7 +448,7 @@ def create_risk_gauge(risk_probability, container_width=700, container_height=18
     
     return fig
 
-def create_performance_metrics_card(metrics, container_width=300, container_height=180):
+def create_performance_metrics_card(metrics, container_width=300, container_height=220):
     fig = go.Figure()
     
     # Create a table to display metrics
@@ -388,7 +485,7 @@ def create_performance_metrics_card(metrics, container_width=300, container_heig
             'font': {'size': 14, 'color': 'white'}
         },
         width=container_width,
-        height=container_height,
+        height=container_height,  # Increased height to fit all metrics
         margin=dict(l=5, r=5, t=30, b=10),
         paper_bgcolor='rgba(10, 30, 61, 0.7)',
     )
@@ -397,7 +494,7 @@ def create_performance_metrics_card(metrics, container_width=300, container_heig
 
 def create_main_risk_trend(risk_data, x_data, container_width=800, container_height=150):
     """
-    Creates the main risk trend visualization
+    Creates the main risk trend visualization with discretely colored points
     """
     # Define colors and thresholds
     thresholds = [60, 80, 90]
@@ -470,26 +567,74 @@ def create_main_risk_trend(risk_data, x_data, container_width=800, container_hei
                 showlegend=False
             ))
     
-    # Add the risk trend line
+    # Create separate traces for each color range of markers
+    # This gives discrete colors by risk level
+    
+    # Points with risk 0-60 (Green)
+    green_x = [x_data[i] for i in range(len(risk_data)) if risk_data[i] < 60]
+    green_y = [risk_data[i] for i in range(len(risk_data)) if risk_data[i] < 60]
+    if green_x:
+        fig.add_trace(go.Scatter(
+            x=green_x, 
+            y=green_y,
+            mode='markers',
+            marker=dict(size=6, color=colors[0]),
+            name="Low Risk (<60%)",
+            hovertemplate='Time: %{x}<br>Risk: %{y:.2f}%<extra></extra>',
+            showlegend=True
+        ))
+    
+    # Points with risk 60-80 (Yellow)
+    yellow_x = [x_data[i] for i in range(len(risk_data)) if 60 <= risk_data[i] < 80]
+    yellow_y = [risk_data[i] for i in range(len(risk_data)) if 60 <= risk_data[i] < 80]
+    if yellow_x:
+        fig.add_trace(go.Scatter(
+            x=yellow_x, 
+            y=yellow_y,
+            mode='markers',
+            marker=dict(size=6, color=colors[1]),
+            name="Moderate Risk (60-80%)",
+            hovertemplate='Time: %{x}<br>Risk: %{y:.2f}%<extra></extra>',
+            showlegend=True
+        ))
+    
+    # Points with risk 80-90 (Orange)
+    orange_x = [x_data[i] for i in range(len(risk_data)) if 80 <= risk_data[i] < 90]
+    orange_y = [risk_data[i] for i in range(len(risk_data)) if 80 <= risk_data[i] < 90]
+    if orange_x:
+        fig.add_trace(go.Scatter(
+            x=orange_x, 
+            y=orange_y,
+            mode='markers',
+            marker=dict(size=6, color=colors[2]),
+            name="High Risk (80-90%)",
+            hovertemplate='Time: %{x}<br>Risk: %{y:.2f}%<extra></extra>',
+            showlegend=True
+        ))
+    
+    # Points with risk 90-100 (Red)
+    red_x = [x_data[i] for i in range(len(risk_data)) if risk_data[i] >= 90]
+    red_y = [risk_data[i] for i in range(len(risk_data)) if risk_data[i] >= 90]
+    if red_x:
+        fig.add_trace(go.Scatter(
+            x=red_x, 
+            y=red_y,
+            mode='markers',
+            marker=dict(size=6, color=colors[3]),
+            name="Critical Risk (>90%)",
+            hovertemplate='Time: %{x}<br>Risk: %{y:.2f}%<extra></extra>',
+            showlegend=True
+        ))
+    
+    # Add the trend line (without markers since we add colored markers separately)
     fig.add_trace(go.Scatter(
         x=x_data, 
         y=risk_data,
-        mode='lines+markers',
+        mode='lines',
         line=dict(color='white', width=2),
-        marker=dict(
-            size=6, 
-            color=risk_data,
-            colorscale=[
-                [0, colors[0]],         # Green for low values
-                [0.6/100, colors[0]],   # Green up to 60%
-                [0.6, colors[1]],       # Yellow at 60%
-                [0.8, colors[2]],       # Orange at 80%
-                [0.9, colors[3]],       # Red at 90%
-                [1, colors[3]]          # Red for high values
-            ]
-        ),
         name="Risk Trend",
-        hovertemplate='Time: %{x}<br>Risk: %{y:.2f}%<extra></extra>'
+        hovertemplate='Time: %{x}<br>Risk: %{y:.2f}%<extra></extra>',
+        showlegend=False
     ))
     
     # Configure layout
@@ -526,7 +671,7 @@ def create_main_risk_trend(risk_data, x_data, container_width=800, container_hei
             font_size=10,
             font_family="Arial"
         ),
-        showlegend=False
+        showlegend=False  # Set to True if you want to show the legend
     )
     
     return fig
@@ -636,6 +781,69 @@ def update_trend_data():
     
     return risk_score
 
+# Function to calculate trend statistics
+def calculate_trend_stats(risk_data, time_interval=0.1):
+    """
+    Calculate statistics for risk trend data
+    """
+    if not risk_data:
+        return {
+            "high_risk_time": 0,
+            "critical_risk_time": 0,
+            "average_risk": 0,
+            "trend_direction": "No data",
+            "max_risk": 0,
+            "time_above_threshold": 0
+        }
+    
+    # Calculate time (in minutes) where risk > 80% (high risk)
+    high_risk_points = len([r for r in risk_data if r >= 80])
+    high_risk_time = (high_risk_points * time_interval) / 60
+    
+    # Calculate time (in minutes) where risk > 90% (critical risk)
+    critical_risk_points = len([r for r in risk_data if r >= 90])
+    critical_risk_time = (critical_risk_points * time_interval) / 60
+    
+    # Calculate average risk
+    average_risk = sum(risk_data) / len(risk_data) if risk_data else 0
+    
+    # Calculate trend direction (increasing or decreasing)
+    if len(risk_data) > 5:
+        # Compare average of first half vs second half
+        half_point = len(risk_data) // 2
+        first_half_avg = sum(risk_data[:half_point]) / half_point if half_point > 0 else 0
+        second_half_avg = sum(risk_data[half_point:]) / (len(risk_data) - half_point) if (len(risk_data) - half_point) > 0 else 0
+        
+        diff = second_half_avg - first_half_avg
+        if diff > 5:
+            trend_direction = "Strongly Increasing"
+        elif diff > 1:
+            trend_direction = "Increasing"
+        elif diff < -5:
+            trend_direction = "Strongly Decreasing"
+        elif diff < -1:
+            trend_direction = "Decreasing"
+        else:
+            trend_direction = "Stable"
+    else:
+        trend_direction = "Insufficient data"
+    
+    # Maximum risk value
+    max_risk = max(risk_data) if risk_data else 0
+    
+    # Calculate time above threshold of 65%
+    threshold_points = len([r for r in risk_data if r >= 65])
+    time_above_threshold = (threshold_points * time_interval) / 60
+    
+    return {
+        "high_risk_time": high_risk_time,
+        "critical_risk_time": critical_risk_time,
+        "average_risk": average_risk,
+        "trend_direction": trend_direction,
+        "max_risk": max_risk,
+        "time_above_threshold": time_above_threshold
+    }
+
 # Initialize session state if it doesn't exist
 if 'simulation_time' not in st.session_state:
     st.session_state.simulation_time = 0
@@ -656,6 +864,8 @@ if 'simulation_time' not in st.session_state:
     st.session_state.x_data = []
     st.session_state.current_patient = None
     st.session_state.excel_data_full = None
+    st.session_state.show_metrics = False
+    st.session_state.show_trend_summary = False
 
 # App title
 st.markdown("<h1 style='text-align: center; margin: 0; padding: 0;'>ROSphere Monitor</h1>", unsafe_allow_html=True)
@@ -708,8 +918,84 @@ with st.sidebar:
         data_loaded = False
         excel_file = f"{patient_id}.xlsx"
         
+        # Add file uploader for database files
+        st.markdown("<div style='margin-bottom: 3px; margin-top: 10px;'>Upload Patient Data</div>", unsafe_allow_html=True)
+        
+        uploaded_file = st.file_uploader(
+            "Upload patient data file (Excel, CSV)",
+            type=["xlsx", "xls", "csv"],
+            label_visibility="collapsed"
+        )
+        
+        if uploaded_file is not None:
+            try:
+                # Save the file to temp directory
+                file_path = os.path.join(temp_dir, uploaded_file.name)
+                with open(file_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                
+                # Schedule file deletion after 10 minutes
+                delete_file_after_delay(file_path)
+                
+                # Success message
+                st.markdown(
+                    f"<div style='background-color: #0a623d; color: white; padding: 5px; border-radius: 5px; margin-top: 5px;'>"
+                    f"File loaded: {uploaded_file.name} (temporary)</div>",
+                    unsafe_allow_html=True
+                )
+                
+                # If Excel or CSV, load into the data
+                if uploaded_file.name.endswith(('.xlsx', '.xls')):
+                    df = pd.read_excel(file_path)
+                    st.session_state.excel_data_full = df
+                    st.session_state.simulation_time = 0
+                    st.session_state.running = False
+                    
+                    # Reset trend data for the new dataset
+                    st.session_state.trend_data = {
+                        'time': [],
+                        'map': [],
+                        'co': [],
+                        'svv': [],
+                        'pvv': [],
+                        'risk': []
+                    }
+                    st.session_state.x_data = []
+                    
+                    # Show preview
+                    with st.expander("Preview uploaded data"):
+                        st.write(df.head())
+                    
+                elif uploaded_file.name.endswith('.csv'):
+                    df = pd.read_csv(file_path)
+                    st.session_state.excel_data_full = df
+                    st.session_state.simulation_time = 0
+                    st.session_state.running = False
+                    
+                    # Reset trend data for the new dataset
+                    st.session_state.trend_data = {
+                        'time': [],
+                        'map': [],
+                        'co': [],
+                        'svv': [],
+                        'pvv': [],
+                        'risk': []
+                    }
+                    st.session_state.x_data = []
+                    
+                    # Show preview
+                    with st.expander("Preview uploaded data"):
+                        st.write(df.head())
+            
+            except Exception as e:
+                st.markdown(
+                    f"<div style='background-color: #622a0a; color: white; padding: 5px; border-radius: 5px; margin-top: 5px;'>"
+                    f"Error: {str(e)}</div>",
+                    unsafe_allow_html=True
+                )
+        
         # If patient changed, reset simulation
-        if st.session_state.current_patient != patient_id:
+        if st.session_state.current_patient != patient_id and not uploaded_file:
             st.session_state.current_patient = patient_id
             st.session_state.simulation_time = 0
             st.session_state.running = False
@@ -729,14 +1015,6 @@ with st.sidebar:
             st.markdown(f"<div style='background-color: #0a1e3d; color: white; padding: 5px; border-radius: 5px; margin-top: 5px;'>Data loaded: {excel_file}</div>", unsafe_allow_html=True)
             
             # Reset trend data
-            st.session_state.trend_data = {
-                'time': [],
-                'map': [],
-                'co': [],
-                'svv': [],
-                'pvv': [],
-                'risk': []
-            }
             st.session_state.trend_data = {
                 'time': [],
                 'map': [],
@@ -863,24 +1141,78 @@ row3_col1, row3_col2 = st.columns([1, 2])
 
 # Metrics row
 with row3_col1:
-    # Metrics table
-    st.markdown("<div class='metric-title'>Algorithm Metrics</div>", unsafe_allow_html=True)
-    metrics_chart = create_performance_metrics_card(metrics)
-    st.plotly_chart(metrics_chart, use_container_width=True, config={'displayModeBar': False})
+    # Clickable card for Algorithm Metrics
+    st.markdown("""
+    <div class="clickable-card" id="metrics-card">
+        <div class="card-title">Algorithm Metrics</div>
+        <div class="card-subtitle">Click to view detailed performance metrics</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Create button to toggle metrics display (hidden but functional for the card)
+    metrics_btn = st.button("Show Metrics", key="show_metrics_btn", label_visibility="collapsed")
+    if metrics_btn:
+        st.session_state.show_metrics = not st.session_state.show_metrics
+    
+    # Display metrics dialog if button was clicked
+    if st.session_state.show_metrics:
+        st.markdown("""
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title">LSTM Algorithm Performance</div>
+                <div class="modal-close" id="close-metrics">✕</div>
+            </div>
+            <div class="modal-body">
+        """, unsafe_allow_html=True)
+        
+        # Display metrics in the modal
+        for metric, value in metrics.items():
+            st.markdown(f"""
+            <div class="stat-box">
+                <div class="stat-label">{metric}</div>
+                <div class="stat-value">{value}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        st.markdown("</div></div>", unsafe_allow_html=True)
+        
+        # Button to close the modal
+        if st.button("Close", key="close_metrics_btn"):
+            st.session_state.show_metrics = False
 
 with row3_col2:
-    # Risk gauge title
-    st.markdown("<div class='metric-title'>Risk Prediction SatO2 <65% in 10min</div>", unsafe_allow_html=True)
+    # Risk gauge title with clickable card
+    st.markdown("""
+    <div class="clickable-card" id="risk-card">
+        <div class="card-title">Risk Prediction SatO2 <65% in 10min</div>
+        <div class="card-subtitle">Current Risk Assessment</div>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Show risk gauge with probability
     risk_gauge = create_risk_gauge(risk_score)
     risk_chart_placeholder = st.empty()
     risk_chart_placeholder.plotly_chart(risk_gauge, use_container_width=True, config={'displayModeBar': False})
 
-# Main risk trend chart
+# Main risk trend chart section with clickable button for summary
 if len(st.session_state.trend_data['risk']) > 0:
     # Container for main trend chart
     st.markdown("<div class='main-trend-container'>", unsafe_allow_html=True)
+    
+    # Create button to toggle trend summary
+    trend_summary_col1, trend_summary_col2 = st.columns([5, 1])
+    
+    with trend_summary_col2:
+        st.markdown("""
+        <div class="clickable-card" id="trend-summary-card" style="margin-top: 0; padding: 8px 5px;">
+            <div class="card-title" style="font-size: 14px; margin-bottom: 0">Trend Summary</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Hidden button for trend summary
+        summary_btn = st.button("Show Summary", key="show_summary_btn", label_visibility="collapsed")
+        if summary_btn:
+            st.session_state.show_trend_summary = not st.session_state.show_trend_summary
     
     # Create and display main trend chart
     main_trend_chart = create_main_risk_trend(
@@ -889,6 +1221,59 @@ if len(st.session_state.trend_data['risk']) > 0:
     )
     
     st.plotly_chart(main_trend_chart, use_container_width=True, config={'displayModeBar': False})
+    
+    # Display trend summary if button was clicked
+    if st.session_state.show_trend_summary:
+        # Calculate trend statistics
+        trend_stats = calculate_trend_stats(st.session_state.trend_data['risk'])
+        
+        st.markdown("""
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title">Risk Trend Summary</div>
+                <div class="modal-close" id="close-summary">✕</div>
+            </div>
+            <div class="modal-body">
+        """, unsafe_allow_html=True)
+        
+        # Display trend statistics
+        st.markdown(f"""
+        <div class="stat-box">
+            <div class="stat-label">Time with Risk >80%</div>
+            <div class="stat-value">{trend_stats['high_risk_time']:.2f} min</div>
+        </div>
+        
+        <div class="stat-box">
+            <div class="stat-label">Time with Risk >90%</div>
+            <div class="stat-value">{trend_stats['critical_risk_time']:.2f} min</div>
+        </div>
+        
+        <div class="stat-box">
+            <div class="stat-label">Average Risk</div>
+            <div class="stat-value">{trend_stats['average_risk']:.1f}%</div>
+        </div>
+        
+        <div class="stat-box">
+            <div class="stat-label">Maximum Risk</div>
+            <div class="stat-value">{trend_stats['max_risk']:.1f}%</div>
+        </div>
+        
+        <div class="stat-box">
+            <div class="stat-label">Trend Direction</div>
+            <div class="stat-value">{trend_stats['trend_direction']}</div>
+        </div>
+        
+        <div class="stat-box">
+            <div class="stat-label">Time with Risk >65%</div>
+            <div class="stat-value">{trend_stats['time_above_threshold']:.2f} min</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("</div></div>", unsafe_allow_html=True)
+        
+        # Button to close the modal
+        if st.button("Close", key="close_summary_btn"):
+            st.session_state.show_trend_summary = False
     
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -989,6 +1374,59 @@ with row2_col2:
     )
     st.plotly_chart(pvv_trend, use_container_width=True, config={'displayModeBar': False})
     st.markdown("</div>", unsafe_allow_html=True)
+
+# Add JavaScript for clickable cards
+st.markdown("""
+<script>
+    // Add click handlers to clickable cards
+    document.addEventListener('DOMContentLoaded', function() {
+        // Algorithm Metrics card
+        const metricsCard = document.getElementById('metrics-card');
+        if (metricsCard) {
+            metricsCard.addEventListener('click', function() {
+                // Find and click the hidden button
+                const metricsBtn = document.querySelector('button[data-testid="baseButton-secondary"]');
+                if (metricsBtn) metricsBtn.click();
+            });
+        }
+        
+        // Risk card - can be linked to trend summary later if needed
+        const riskCard = document.getElementById('risk-card');
+        if (riskCard) {
+            riskCard.addEventListener('click', function() {
+                // Action for clicking risk card
+            });
+        }
+        
+        // Trend Summary card
+        const trendSummaryCard = document.getElementById('trend-summary-card');
+        if (trendSummaryCard) {
+            trendSummaryCard.addEventListener('click', function() {
+                // Find and click the hidden button
+                const summaryBtn = document.querySelector('button[data-testid="baseButton-secondary"]');
+                if (summaryBtn) summaryBtn.click();
+            });
+        }
+        
+        // Close buttons for modals
+        const closeMetricsBtn = document.getElementById('close-metrics');
+        if (closeMetricsBtn) {
+            closeMetricsBtn.addEventListener('click', function() {
+                const closeBtn = document.querySelector('button[key="close_metrics_btn"]');
+                if (closeBtn) closeBtn.click();
+            });
+        }
+        
+        const closeSummaryBtn = document.getElementById('close-summary');
+        if (closeSummaryBtn) {
+            closeSummaryBtn.addEventListener('click', function() {
+                const closeBtn = document.querySelector('button[key="close_summary_btn"]');
+                if (closeBtn) closeBtn.click();
+            });
+        }
+    });
+</script>
+""", unsafe_allow_html=True)
 
 # Automatic simulation (only run in automatic mode and when running)
 if st.session_state.mode == "AUTOMÁTICO" and st.session_state.running:
